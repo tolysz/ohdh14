@@ -1,0 +1,301 @@
+<html>
+<head>
+<!-- Latest compiled and minified CSS -->
+    <link rel="stylesheet" href="//s2-static.tolysz.org/css/bootstrap.min.css">
+<!-- Optional theme -->
+    <link rel="stylesheet" href="//s2-static.tolysz.org/css/bootstrap-theme.min.css">
+ <style>
+
+ .axis {
+   font: 10px sans-serif;
+ }
+
+ .axis path,
+ .axis line {
+   fill: none;
+   stroke: #000;
+   shape-rendering: crispEdges;
+ }
+
+ </style>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Helpers for older browsers -->
+    <script type="text/javascript" src="//s2-static.tolysz.org/polyfills/observe.js"></script>
+    <script type="text/javascript" src="//s2-static.tolysz.org/polyfills/promise-6.0.0.min.js"></script>
+
+</head>
+<body>
+
+<script src="//s2-static.tolysz.org/d3.min.js" charset="utf-8"></script>
+<script src="//s2-static.tolysz.org/underscore-min.js" charset="utf-8"></script>
+<script src="//s2-static.tolysz.org/jquery-2.1.1.min.js" charset="utf-8"></script>
+<script src="//s2-static.tolysz.org/js/bootstrap.min.js" charset="utf-8"></script>
+<!-- <script src="local.js" charset="utf-8"></script> -->
+
+ <h1> TWSS </h1>
+ <select id="sel"></select>
+ <div id="svg" ></div>
+
+<script>
+
+
+var margin = {top: 20, right: 20, bottom: 70, left: 40}
+  , width = 1000 // | window.innerWidth || e.clientWidth || g.clientWidth  ) + margin.left + margin.right
+  , height = 500 // | window.innerHeight|| e.clientHeight|| g.clientHeight) + margin.top + margin.bottom
+  ;
+
+var lineFunc = function (mod){
+  return d3.svg.line()
+  .x(function(d) {
+    // console.log(mod,d);
+    return mod.x(d[0]);
+  })
+  .y(function(d) {
+    return mod.y(d[1]);
+  })
+  .interpolate('linear');
+ }
+
+function DataLinear(data, opts, name) {
+
+     this.name = name;
+     this.data = opts.pre( opts.pre0 (data , name) );
+//     console.log(_.flatten(this.data, true));
+     this.x = d3.scale.linear().range([0, width]) .domain([_.min(_.map(_.flatten(this.data, true), function(d){ return +d[0]})),_.max(_.map(_.flatten(this.data, true), function(d){ return +d[0]}))]);
+     this.y = d3.scale.linear().range([height, 0]).domain([_.min(_.map(_.flatten(this.data, true), function(d){ return +d[1]})),_.max(_.map(_.flatten(this.data, true), function(d){ return +d[1]}))]);
+
+     this.width =  0; // function () { return (width - 250) / opts.cnt};
+   }
+
+function DataBuckets(data, opts, name) {
+     this.name = name;
+     this.data = opts.pre( opts.pre0 (data , name) );
+     this.x = d3.scale.ordinal().rangeRoundBands([0, width], .05).domain( _.uniq(_.sortBy(_.map(this.data, function(d){ return +d[0]}), _.identity), true) );
+     this.y = d3.scale.linear() .range([height, 0])              .domain([_.min(_.map(this.data, function(d){ return +d[1]})),_.max(_.map(this.data, function(d){ return +d[1]}))]);
+     this.width =   this.x.rangeBand;
+   };
+
+function DataBucketsEqual(data, opts, name) {
+     this.name = name;
+     this.data = opts.pre( opts.pre0 (data, name) );
+     this.x = d3.scale.ordinal().rangeRoundBands([0, width], .05).domain( _.range(_.min(_.map(this.data, function(d){ return +d[0]})),_.max(_.map(this.data, function(d){ return +d[0]}))));
+     this.y = d3.scale.linear() .range([height, 0])              .domain([_.min(_.map(this.data, function(d){ return +d[1]})),_.max(_.map(this.data, function(d){ return +d[1]}))]);
+     this.width =   this.x.rangeBand;
+   };
+
+
+function DataBands(data, opts, name) {
+     this.name = name;
+     this.data = opts.pre( opts.pre0 (data, name) );
+     this.x = d3.scale.linear().range([0, width]) .domain([_.min(_.map(this.data, function(d){ return +d[0]})),_.max(_.map(this.data, function(d){ return +d[0]}))]);
+     this.y = d3.scale.linear().range([height, 0]).domain([_.min(_.map(this.data, function(d){ return +d[1]})),_.max(_.map(this.data, function(d){ return +d[1]}))]);
+     this.width =   function () { return (width - 250) / opts.cnt};
+   };
+
+var rebucketEvery = function(cnt){
+    return function (dat){
+               var filt = _.filter( dat, function (d){ return +d[0] > -1;} );
+               var rang = _.map(filt, function(cc){ return cc[0]});
+               var min = _.min(rang);
+               var max = _.max(rang);
+               var mami = (max - min) / cnt ;
+
+               return  _.map(  _.groupBy( _.union( _.filter( dat, function (d){ return +d[0] > -1;} )
+                                  , _.map( _.range( min, max, mami), function (z){return [+z,0];})), function (dd) { return Math.floor( dd[0] / cnt ) * cnt;  } )
+                              , function (dd, kk){
+                                         var er= [ kk
+                                                 , _.reduce(
+                                                         _.map(dd, 
+                                                                  function(ddd){return +ddd[1];} 
+                                                              ) , function(memo, num){ return memo + num; }, 0
+                                                           )
+                                                 ];
+                                         return er; }
+                           );
+           }
+ };
+
+var rebucketTo = function(cnt){
+    return function (dat){
+               var filt = _.filter( dat, function (d){ return +d[0] > -1;} );
+               var rang = _.map(filt, function(cc){ return cc[0]});
+               var min = _.min(rang);
+               var max = _.max(rang);
+               var mami = (max - min) / (cnt + 1);
+               return  _.map( _.groupBy( filt
+                                  , function (dd) { return Math.floor(min + Math.floor( (dd[0] - min) / mami )  * mami);  } 
+                                  )
+                              , function (dd, kk){
+                                         var er= [ kk
+                                                 , _.reduce(
+                                                         _.map(dd,
+                                                                  function(ddd){;return +ddd[1];} 
+                                                              ) , function(memo, num){ return memo + num; }, 0
+                                                           )
+                                                 ];
+                                         return er; } );
+           }
+ };
+
+var singleValue = function (data1,sel) {
+          return _.map( _.pairs( _.countBy( _.map( data1
+                                                 , function(e){ return e[sel][0].value;} 
+                                                 )
+                                          , _.identity
+                                          )
+                                )
+                      , function (d){ return [+d[0],+d[1] ]; } 
+                      )
+   };
+
+var multipleValues  = function (data1,sel) {
+          var mv =  _.sortBy( _.map( data1, function(e){ return _.map( e[sel], function(v){return [v.time, v.value]}) }), function(vv){return vv[0]});
+          // console.log(mv);
+          return mv;
+   };
+
+var model
+  = { "Age"        : { ctx :  DataBuckets, opts: { type: "bar"
+                                                 , pre: function(dat){ return _.filter(dat, function (d){ return +d[0] > -1;} )} 
+                                                 , pre0: singleValue
+                                                 }
+                     }
+    , "Height"     : { ctx :  DataBuckets, opts: { type: "bar", pre: rebucketEvery(10) , pre0: singleValue}}
+    , "Weight"     : { ctx :  DataBuckets, opts: { type: "bar", pre: rebucketEvery(10) , pre0: singleValue}}
+//    , "RecordID"   : { ctx :  DataBuckets, opts: { type: "bar", pre: _.identity        , pre0: singleValue}}
+    , "Gender"     : { ctx :  DataBuckets, opts: { type: "bar", pre: _.identity        , pre0: singleValue}}
+    , "ICUType"    : { ctx :  DataBuckets, opts: { type: "bar", pre: _.identity        , pre0: singleValue}}
+    , "HCT"        : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "HR"         : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "SysABP"     : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "NISysABP"   : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+
+    , "K"          : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "NIMAP"      : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "RespRate"   : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "BUN"        : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "PaO2"       : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "MAP"        : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Creatinine" : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Temp"       : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Glucose"    : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "HCO3"       : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "PaCO2"      : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "GCS"        : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Na"         : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Platelets"  : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Lactate"    : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Mg"         : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "Urine"      : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "pH"         : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "NIDiasABP"  : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+    , "WBC"        : { ctx :  DataLinear,  opts: { type: "line", pre: _.identity       , pre0: multipleValues}}
+  };
+
+var data1 = new Promise(function (succ,fail){
+     d3.json("https://twss.s5-static.tolysz.org/a/all.json", function(error, json) {
+     if (error) fail(error);
+   var x = document.getElementById("sel");
+   x.onchange = function (c){updateView(x.options[x.selectedIndex].value );};
+
+   _.map( _.keys(model) , function (o) {
+      var option = document.createElement("option");
+//      console.log(o);
+      option.text = o;
+      x.add(option);
+  });
+  x.focus();
+
+     succ(json);
+   });
+  });
+
+var xAxis = d3.svg.axis()
+    .orient("bottom")
+    // .tickFormat(d3.time.format("%Y-%m"))
+    ;
+
+var yAxis = d3.svg.axis()
+    .orient("left")
+    .ticks(10);
+
+var updateView = function(sel){
+ data1.then(function (data1){
+
+  curModel = new model[sel].ctx( data1, model[sel].opts, sel);
+
+  var data = curModel.data;
+
+  // console.log(curModel);
+
+  var x = curModel.x;
+  var y = curModel.y;
+
+  xAxis.scale(x);
+  yAxis.scale(y);
+
+d3.select("#svg")
+  .selectAll("*").remove();
+
+svg = d3.select("#svg")
+   .append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+   .append("g")
+    .attr("transform", 
+          "translate(" + margin.left + "," + margin.top + ")");
+
+  svg.append("g")
+      .attr("class", "x axis")
+      .attr("transform", "translate(0," + height + ")")
+      .call(xAxis)
+    .selectAll("text")
+      .style("text-anchor", "end")
+      .attr("dx", "-.8em")
+      .attr("dy", "-.55em")
+      .attr("transform", "rotate(-90)" );
+
+  svg.append("g")
+      .attr("class", "y axis")
+      .call(yAxis)
+    .append("text")
+      .attr("transform", "rotate(-90)")
+      .attr("y", 6)
+      .attr("dy", ".71em")
+      .style("text-anchor", "end")
+      .text(sel);
+
+switch (model[sel].opts.type) {
+
+ case "bar":
+  svg.selectAll("bar")
+      .data(data)
+    .enter().append("rect")
+      .style("fill", "steelblue")
+      .attr("x", function(d) { return x(+d[0]); })
+   .attr("width", curModel.width ())
+      .attr("y", function(d) { return y(+d[1]); })
+      .attr("height", function(d) { return height - y(+d[1]); });
+  break;
+
+  case "line":
+ _.map(data, function(dat){
+   svg.append('svg:path')
+     .attr('d', lineFunc(curModel)(dat))
+     .attr('stroke', 'blue')
+     .attr('stroke-width', 0.1)
+     .attr('fill', 'none')
+     ;
+ });
+ break;
+}
+
+});
+};
+
+updateView("Age");
+
+</script>
+</body>
+</html>
