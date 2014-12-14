@@ -1,0 +1,13 @@
+#!/bin/bash
+
+
+sudo apt-get install latex-beamer
+wget -N https://gist.githubusercontent.com/sway/3101743/raw/c20c2e7fc7d5ca7f61a51270e6dfa3b5f202333a/fontawesome.sty
+
+jpegtopnm twss.jpg  | pnmtops | ps2pdf - -> twss.pdf
+jpegtopnm kid-waterslide.jpg | pnmtops | ps2pdf - -> slide.pdf
+jpegtopnm PaO2.jpeg | pnmtops | ps2pdf - -> PaO2.pdf
+
+xelatex project.tex
+
+
